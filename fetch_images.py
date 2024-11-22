@@ -47,33 +47,34 @@ class FetchImages:
         self.verbose = verbose
         self.save_dir = save_dir
         self.mosaicking_order = mosaicking_order
-        self.mapper = {}
 
     def fetch(self) -> None:
-        list_of_requests = []
-        self.mapper = {}
+        all_results = []
         for index, row in self.data.iterrows():
-            time_interval = self._define_time_interval(row)
+            print(f"Analysis helcom_id: {row['HELCOM_ID']}...")
+            time_intervals = self._define_time_interval(row)
             bbox, size = self._define_bbox(row["Latitude"], row["Longitude"])
-            self.mapper[bbox.geometry.bounds] = f"HELCOM_ID_{row['HELCOM_ID']}"
-            request = self._get_request(
-                time_interval=time_interval,
-                bbox=bbox,
-                size=size,
-            )
-            list_of_requests.append(request.download_list[0])
-        print("Loading...")
-        data = SentinelHubDownloadClient(config=self.config).download(
-            list_of_requests, max_threads=self.threads
-        )
-        print(f"Done! Results save in {self.save_dir}")
-        return self
+            results = []
+            for time_interval in time_intervals:
+                print(time_interval)
+                request = self._get_request(
+                    time_interval=time_interval,
+                    bbox=bbox,
+                    size=size,
+                )
+                results.append((time_interval[0], row["Area__km2_"], row["Latitude"], row["Longitude"], request.get_data()[0]))
+            print("Done!")
+            all_results.append(results)
+        print(f"All done!")
+        return all_results
 
     def _define_time_interval(self, row):
-        return (
-            row["Date_standard"] - timedelta(days=self.time_interval_size),
-            row["Date_standard"] + timedelta(days=self.time_interval_size),
-        )
+        time_intervals = []
+        for i in range(-self.time_interval_size,self.time_interval_size + 1):
+            date_offset = row["Date_standard"] + timedelta(days=i)
+            time_intervals.append((date_offset, date_offset))
+    
+        return time_intervals
 
     def _define_bbox(
         self, latitude: float, longitude: float
@@ -109,8 +110,8 @@ class FetchImages:
             evalscript=self.evalscript,
             input_data=[
                 SentinelHubRequest.input_data(
-                    data_collection=DataCollection.SENTINEL2_L1C.define_from(
-                        "s2l1c", service_url=self.config.sh_base_url
+                    data_collection=DataCollection.SENTINEL1_IW.define_from(
+                        "s1iw", service_url=self.config.sh_base_url
                     ),
                     time_interval=time_interval,
                     mosaicking_order=self.mosaicking_order,
